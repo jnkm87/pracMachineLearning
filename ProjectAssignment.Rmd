@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+
+# Load Libraries and Read Files  
+
+```{r}
+library(caret)
+library(randomForest)
+library(rattle); library(rpart.plot)
+training <- read.table("pml-training.csv", sep=',', stringsAsFactors=F, header=T)
+problem <- read.table("pml-testing.csv", sep=',', stringsAsFactors=F, header=T)
+```
+
+# Data Processing  
+
+## Data Slicing  
+Data split into training (60%), testing (20%) and validation (20%) sets in the respective proportions using the *train* function.
+
+```{r}
+training$classe <- as.factor(training$classe)
+set.seed(100)
+inTrain <- createDataPartition(training[,"classe"], p=0.6, list=F)
+training <- training[inTrain,]
+testing <- training[-inTrain,]
+inTest <- createDataPartition(testing[,"classe"], p=0.5, list=F)
+testing <- testing[inTest,]
+validation <- testing[-inTest,]
+```
+
+## Data Cleaning  
+For the simplicity of this writeup analysis, only the acceleration, magnet and gyros in the x, y, z planes were used as predictor variables.  The outcome variable for the training, testing, validation sets is the *classe* variable. The dataset from the *pml-testing.csv* with the classe variable to be predicted is unknown is designated variable **problem**.  
+```{r}
+predictor <- colnames(training[,grep("\\_[xyz]$" , colnames(training))])
+var_problem <-c("problem_id", predictor)
+#outcome <- colnames(model.matrix(~classe-1, data=training))
+outcome <- "classe"
+training <- training[,c(outcome, predictor)]
+testing <- testing[,c(outcome, predictor)]
+validation <- validation[,c(outcome, predictor)]
+
+problem <- problem[,c("problem_id", predictor)]
+```
+
+# Feature Selection
+Feature selection was performed using the *findCorrelation* function in the caret package. A cutoff of 0.75 was used to identify predictor variables which were correlated. These variables were removed from the datasets
+
+```{r}
+# highly correlated variables in training set
+corMatrix.train <- cor(training[,predictor])
+highCor.train <- findCorrelation(corMatrix.train, cutoff=0.75)
+print(predictor[-c(highCor.train)])
+
+# highly correlated variables in testing set
+corMatrix.test <- cor(testing[,predictor])
+highCor.test <- findCorrelation(corMatrix.test, cutoff=0.75)
+print(predictor[-c(highCor.test)])
+
+# removal of highly correlated variables
+predictor <- predictor[-c(highCor.train)]
+training <- training[,c(outcome, predictor)]
+testing <- testing[,c(outcome, predictor)]
+validation <- validation[,c(outcome, predictor)]
+```
+
+
+# Prediction Function Selection
+The random forest and decision trees will be tested as prediction algorithm functions
+
+## Random Forest
+```{r}
+modFitRF <- randomForest(x=training[,predictor], y=training[,outcome])
+predictRF <- predict(modFitRF, newdata=testing)
+confusionMatrix(predictRF, testing$classe)
+```
+The use of the random forest method had an accuracy of 1.
+
+## Decision Trees
+```{r}
+modFitDT <- train(classe~.,method="rpart", data=training)
+fancyRpartPlot(modFitDT$finalModel)
+predictDT <- predict(modFitDT, newdata=testing)
+confusionMatrix(predictDT, testing$classe)
+```
+The decision tree method had a much lower accuracy of 0.4428, and had lower sensitivity, specificity, positive and negative predictive values. Hence, the random forest method was chosen.
+
+## Application to Validation Set
+The model fitted with the random forest algorithm was applied to the validation set, and similarly had perfect accuracy. 
+```{r}
+predictRFv <- predict(modFitRF, newdata=validation)
+confusionMatrix(predictRFv, validation$classe)
+```
+
+
+# Predict Problem Set  
+The fitted model was applied to the problem dataset to predict the activity class.
+```{r}
+predict(modFitRF, newdata=problem)
+```
